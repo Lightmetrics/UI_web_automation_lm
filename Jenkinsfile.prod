@@ -108,16 +108,7 @@ pipeline {
         }
     }
 
-    post {
-        success {
-            echo 'Zipping and archiving Allure report for email download...'
-            sh '''
-                set -e
-                zip -r allure-report.zip allure-report
-            '''
-            archiveArtifacts artifacts: 'allure-report.zip', fingerprint: true
-        }
-
+    post {        
         failure {
             emailext(
                 subject: "[${params.ENVIRONMENT}] FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
@@ -135,9 +126,19 @@ pipeline {
         }
 
         always {
+            script {
+                if (currentBuild.currentResult == 'SUCCESS' || currentBuild.currentResult == 'UNSTABLE') {
+                    echo 'Zipping and archiving Allure report for email download...'
+                    sh '''
+                        set -e
+                        zip -r allure-report.zip allure-report
+                    '''
+                    archiveArtifacts artifacts: 'allure-report.zip', fingerprint: true
+                }
+            }
             echo 'Cleaning up workspace and virtual environment...'
             sh 'rm -rf venv || true'
-            archiveArtifacts artifacts: '**/*.png', fingerprint: true
+            archiveArtifacts artifacts: '**/*.png', allowEmptyArchive: true, fingerprint: true
             deleteDir()
         }
     }
