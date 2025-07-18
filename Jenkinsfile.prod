@@ -79,7 +79,6 @@ pipeline {
             }
         }
 
-        // 💡 NEW: Generate self-contained index.html
         stage('Generate Single-File Allure Report') {
             steps {
                 sh '''
@@ -100,7 +99,6 @@ pipeline {
             }
         }
 
-        // 💡 NEW: Archive single-file HTML
         stage('Archive Single HTML Report') {
             steps {
                 archiveArtifacts artifacts: 'single-report/index.html', fingerprint: true
@@ -110,7 +108,7 @@ pipeline {
         stage('Email Report') {
             steps {
                 emailext(
-                    subject: "[${params.ENVIRONMENT}] Jenkins Build: ${env.JOB_NAME} #${env.BUILD_NUMBER} – ${currentBuild.currentResult}",
+                    subject: "UI Automation Report – ${params.ENVIRONMENT} Environment – ${currentBuild.currentResult}",
                     body: """
                         Hi Team,<br><br>
                         The latest automation run for <b>${env.JOB_NAME}</b> has completed.<br>
@@ -131,7 +129,7 @@ pipeline {
     post {        
         failure {
             emailext(
-                subject: "[${params.ENVIRONMENT}] FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                subject: "UI Automation Report – ${params.ENVIRONMENT} Environment – ${currentBuild.currentResult}",
                 body: """
                     Hi Team,<br><br>
                     The automation run for <b>${env.JOB_NAME}</b> has failed.<br>
