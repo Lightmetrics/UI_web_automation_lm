@@ -8,7 +8,7 @@ pipeline {
     parameters {
         choice(
             name: 'ENVIRONMENT',
-            choices: ['QA', 'PROD','BETA'],
+            choices: ['QA','BETA'],
             description: 'Select environment to run tests'
         )
     }
