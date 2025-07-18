@@ -79,12 +79,31 @@ pipeline {
             }
         }
 
+        // 💡 NEW: Generate self-contained index.html
+        stage('Generate Single-File Allure Report') {
+            steps {
+                sh '''
+                    set -e
+                    echo "--- Generating Single File Allure Report ---"
+                    export PATH="$ALLURE_HOME/bin:$PATH"
+                    allure generate --single-file "$ALLURE_RESULTS" -o single-report --clean
+                '''
+            }
+        }
+
         stage('Publish Allure Report') {
             steps {
                 allure(
                     report: "${ALLURE_REPORT}",
                     results: [[path: "${ALLURE_RESULTS}"]]
                 )
+            }
+        }
+
+        // 💡 NEW: Archive single-file HTML
+        stage('Archive Single HTML Report') {
+            steps {
+                archiveArtifacts artifacts: 'single-report/index.html', fingerprint: true
             }
         }
 
@@ -98,7 +117,8 @@ pipeline {
                         <b>Status:</b> ${currentBuild.currentResult}<br>
                         <b>Environment:</b> ${params.ENVIRONMENT}<br>
                         <b>Allure Report (view):</b> <a href="${env.BUILD_URL}allure">Click here to view</a><br>
-                        <b>Allure Report (download):</b> <a href="${env.BUILD_URL}artifact/allure-report.zip">Click here to download ZIP</a><br><br>
+                        <b>Allure Report (download ZIP):</b> <a href="${env.BUILD_URL}artifact/allure-report.zip">Download ZIP</a><br>
+                        <b>Allure Report (single HTML):</b> <a href="${env.BUILD_URL}artifact/single-report/index.html">Download HTML</a><br><br>
                         Regards,<br>QA Automation Team
                     """,
                     mimeType: 'text/html',
