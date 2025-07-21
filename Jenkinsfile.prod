@@ -8,18 +8,18 @@ pipeline {
     parameters {
         choice(
             name: 'ENVIRONMENT',
-            choices: ['PROD'],
+            choices: ['QA','BETA'],
             description: 'Select environment to run tests'
         )
     }
 
     environment {
-        PYTHON_VERSION  = '3.9.18'
-        ALLURE_RESULTS  = 'allure-results'
-        ALLURE_REPORT   = 'allure-report'
-        PYENV_ROOT      = "$HOME/.pyenv"
-        PATH            = "$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH"
-        TEST_ENV        = "${params.ENVIRONMENT}"
+        PYTHON_VERSION       = '3.9.18'
+        ALLURE_RESULTS       = 'allure-results'
+        ALLURE_REPORT_FOLDER = 'allure-report'
+        ALLURE_COMBINED_DIR  = 'combined-report-output' // Directory for allure-combine output
+        FINAL_REPORT_NAME    = 'allure-test-report.html' // The final, user-friendly filename
+        TEST_ENV             = "${params.ENVIRONMENT}"
     }
 
     stages {
@@ -33,18 +33,19 @@ pipeline {
         stage('Setup Python & Dependencies') {
             steps {
                 sh '''
+                    #!/bin/bash
                     set -e
                     echo "--- Setting up pyenv and Python ---"
                     export PYENV_ROOT="$HOME/.pyenv"
                     export PATH="$PYENV_ROOT/bin:$PATH"
-                    eval "$(pyenv init --path)"
                     eval "$(pyenv init -)"
-                    pyenv install -s "$PYTHON_VERSION"
+
+                    if ! pyenv versions --bare | grep -q "^${PYTHON_VERSION}$"; then
+                      pyenv install "$PYTHON_VERSION"
+                    fi
                     pyenv shell "$PYTHON_VERSION"
 
-                    echo "--- Python version ---"
-                    python --version
-
+                    echo "--- Using Python version: $(python --version) ---"
                     echo "--- Creating virtual environment ---"
                     python -m venv venv
                     . venv/bin/activate
@@ -67,96 +68,96 @@ pipeline {
             }
         }
 
-        stage('Generate Allure Report (CLI)') {
+        stage('Generate & Publish Allure Report') {
             steps {
-                sh '''
-                    set -e
-                    echo "--- Generating Allure Report ---"
-                    export PATH="$ALLURE_HOME/bin:$PATH"
-                    allure --version
-                    allure generate "$ALLURE_RESULTS" --clean -o "$ALLURE_REPORT"
-                '''
+                script {
+                    sh '''
+                        set -e
+                        echo "--- Generating Allure Report folder ---"
+                        export PATH="$ALLURE_HOME/bin:$PATH"
+                        allure generate "$ALLURE_RESULTS" --clean -o "$ALLURE_REPORT_FOLDER"
+                    '''
+                    allure(
+                        report: "${ALLURE_REPORT_FOLDER}",
+                        results: [[path: "${ALLURE_RESULTS}"]]
+                    )
+                }
             }
         }
 
-        stage('Generate Single-File Allure Report') {
+        stage('Create, Archive & Email Single-File Report') {
             steps {
-                sh '''
-                    set -e
-                    echo "--- Generating Single File Allure Report ---"
-                    export PATH="$ALLURE_HOME/bin:$PATH"
-                    allure generate --single-file "$ALLURE_RESULTS" -o single-report --clean
-                '''
-            }
-        }
+                script {
+                    echo 'Combining report into a single HTML file...'
+                    sh """
+                        set -e
+                        . venv/bin/activate
+                        
+                        # Create the combined report in a dedicated directory
+                        allure-combine "$ALLURE_REPORT_FOLDER" --dest "$ALLURE_COMBINED_DIR" --auto-create-folders
+                        
+                        # Move and rename the file to the workspace root with a clean name
+                        mv "$ALLURE_COMBINED_DIR/complete.html" "${FINAL_REPORT_NAME}"
+                        
+                        echo "--- Verifying final report ---"
+                        ls -la "${FINAL_REPORT_NAME}"
+                        echo "File size: \$(du -h ${FINAL_REPORT_NAME} | cut -f1)"
+                    """
 
-        stage('Publish Allure Report') {
-            steps {
-                allure(
-                    report: "${ALLURE_REPORT}",
-                    results: [[path: "${ALLURE_RESULTS}"]]
-                )
-            }
-        }
+                    // Archive the final report so it's available on the Jenkins build page
+                    archiveArtifacts artifacts: "${FINAL_REPORT_NAME}"
+                    
+                    // Send the email with the file as a direct attachment
+                    emailext(
+                        from: "sathvik.bhat@lightmetrics.co",
+                        to: "sathvik.bhat@lightmetrics.co, vidya.hampiholi@lightmetrics.co, divya.gajanana@lightmetrics.co", // Added all recipients
+                        subject: "[${params.ENVIRONMENT}] Test Report: ${env.JOB_NAME} #${env.BUILD_NUMBER} – SUCCESS",
+                        body: """
+                            Hi Team,<br><br>
+                            The latest automation run for <b>${env.JOB_NAME}</b> has completed successfully.<br>
+                            <b>Status:</b> SUCCESS<br>
+                            <b>Environment:</b> ${params.ENVIRONMENT}<br><br>
+                            
+                            <b>📊 Test Report:</b><br>
+                            The detailed test report is attached to this email as <b>"${FINAL_REPORT_NAME}"</b>.<br><br>
+                            
+                            <b>📝 How to view the attachment:</b><br>
+                            1. Download the attached HTML file.<br>
+                            2. Double-click the file to open it directly in your browser.<br>
+                            3. The report works completely offline - no server or Jenkins access is needed.<br><br>
+                            
+                            <b>For online viewing on Jenkins:</b> <a href="${env.BUILD_URL}allure">Click here</a><br><br>
 
-        stage('Archive Single HTML Report') {
-            steps {
-                archiveArtifacts artifacts: 'single-report/index.html', fingerprint: true
-            }
-        }
-
-        stage('Email Report') {
-            steps {
-                emailext(
-                    subject: "UI Automation Report – ${params.ENVIRONMENT} Environment – ${currentBuild.currentResult}",
-                    body: """
-                        Hi Team,<br><br>
-                        The latest automation run for <b>${env.JOB_NAME}</b> has completed.<br>
-                        <b>Status:</b> ${currentBuild.currentResult}<br>
-                        <b>Environment:</b> ${params.ENVIRONMENT}<br>
-                        <b>Allure Report (view):</b> <a href="${env.BUILD_URL}allure">Click here to view</a><br>
-                        <b>Allure Report (download ZIP):</b> <a href="${env.BUILD_URL}artifact/allure-report.zip">Download ZIP</a><br>
-                        <b>Allure Report (single HTML):</b> <a href="${env.BUILD_URL}artifact/single-report/index.html">Download HTML</a><br><br>
-                        Regards,<br>QA Automation Team
-                    """,
-                    mimeType: 'text/html',
-                    to: "vidya.hampiholi@lightmetrics.co, divya.gajanana@lightmetrics.co"
-                )
+                            Regards,<br>QA Automation Team
+                        """,
+                        mimeType: 'text/html',
+                        attachmentsPattern: "${FINAL_REPORT_NAME}"
+                    )
+                }
             }
         }
     }
 
-    post {        
+    post {
         failure {
             emailext(
-                subject: "UI Automation Report – ${params.ENVIRONMENT} Environment – ${currentBuild.currentResult}",
+                from: "sathvik.bhat@lightmetrics.co",
+                to: "sathvik.bhat@lightmetrics.co, vidya.hampiholi@lightmetrics.co, divya.gajanana@lightmetrics.co", // Added all recipients
+                subject: "[${params.ENVIRONMENT}] FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                 body: """
                     Hi Team,<br><br>
                     The automation run for <b>${env.JOB_NAME}</b> has failed.<br>
                     <b>Status:</b> ${currentBuild.currentResult}<br>
                     <b>Environment:</b> ${params.ENVIRONMENT}<br>
                     <b>Build URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a><br><br>
+                    Please check the console output for details.<br><br>
                     Regards,<br>QA Automation Team
                 """,
-                mimeType: 'text/html',
-                to: "vidya.hampiholi@lightmetrics.co, divya.gajanana@lightmetrics.co"
+                mimeType: 'text/html'
             )
         }
-
         always {
-            script {
-                if (currentBuild.currentResult == 'SUCCESS' || currentBuild.currentResult == 'UNSTABLE') {
-                    echo 'Zipping and archiving Allure report for email download...'
-                    sh '''
-                        set -e
-                        zip -r allure-report.zip allure-report
-                    '''
-                    archiveArtifacts artifacts: 'allure-report.zip', fingerprint: true
-                }
-            }
-            echo 'Cleaning up workspace and virtual environment...'
-            sh 'rm -rf venv || true'
-            archiveArtifacts artifacts: '**/*.png', allowEmptyArchive: true, fingerprint: true
+            echo 'Final cleanup...'
             deleteDir()
         }
     }
