@@ -7,4 +7,5 @@ pytest-xdist
 python-slugify
 keyboard
 pyautogui
+allure-combine
 
