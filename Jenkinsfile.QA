@@ -110,7 +110,7 @@ pipeline {
                     // Send the email with the file as a direct attachment
                     emailext(
                         from: "sathvik.bhat@lightmetrics.co",
-                        to: "sathvik.bhat@lightmetrics.co, vidya.hampiholi@lightmetrics.co, divya.gajanana@lightmetrics.co", // Added all recipients
+                        to: "vidya.hampiholi@lightmetrics.co", // Added all recipients
                         subject: "[${params.ENVIRONMENT}] Test Report: ${env.JOB_NAME} #${env.BUILD_NUMBER} – SUCCESS",
                         body: """
                             Hi Team,<br><br>
@@ -142,7 +142,7 @@ pipeline {
         failure {
             emailext(
                 from: "sathvik.bhat@lightmetrics.co",
-                to: "sathvik.bhat@lightmetrics.co, vidya.hampiholi@lightmetrics.co, divya.gajanana@lightmetrics.co", // Added all recipients
+                to: "vidya.hampiholi@lightmetrics.co", // Added all recipients
                 subject: "[${params.ENVIRONMENT}] FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                 body: """
                     Hi Team,<br><br>
